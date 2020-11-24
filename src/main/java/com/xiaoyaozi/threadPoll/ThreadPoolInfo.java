@@ -45,7 +45,7 @@ public class ThreadPoolInfo implements Serializable {
     /**
      * 已完成任务数（这个数是个近似值，只会大，不会小）
      */
-    private Integer completedTaskCount;
+    private Long completedTaskCount;
     /**
      * 队列总长度
      */
@@ -62,4 +62,12 @@ public class ThreadPoolInfo implements Serializable {
      * 队列利用率：队列可用长度 / 队列总长度
      */
     private String queueUsedPercent;
+    /**
+     * 线程池阻塞抛出异常次数
+     */
+    private Integer rejectCount;
+    /**
+     * 队列类型
+     */
+    private String queueType;
 }

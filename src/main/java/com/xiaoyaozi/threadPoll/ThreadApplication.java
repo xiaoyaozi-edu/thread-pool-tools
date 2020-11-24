@@ -1,5 +1,6 @@
 package com.xiaoyaozi.threadPoll;
 
+import ch.qos.logback.core.util.TimeUtil;
 import com.xiaoyaozi.threadPoll.service.GoodsService;
 import com.xiaoyaozi.threadPoll.service.PriceService;
 import com.xiaoyaozi.threadPoll.service.StockService;
@@ -10,8 +11,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * tip:
@@ -34,6 +37,17 @@ public class ThreadApplication {
     private PriceService priceService;
     @Autowired
     private StockService stockService;
+
+
+    @GetMapping("/put")
+    public List<ThreadPoolInfo> put() {
+        ThreadUtils.pushTaskToThreadPollQueue(ThreadUtils.LINKED_THREAD_POLL, () -> {
+            TimeUnit.SECONDS.sleep(100);
+            return null;
+        });
+        return ThreadUtils.getThreadPoolInfo();
+    }
+
 
     @GetMapping("/goods")
     public String goods() {

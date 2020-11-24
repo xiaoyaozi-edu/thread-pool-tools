@@ -4,8 +4,12 @@ import cn.hutool.core.thread.NamedThreadFactory;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * tip:
@@ -26,6 +30,7 @@ public class ThreadUtils {
      * 存放线程池信息
      */
     private static final HashMap<String, ThreadPoolExecutor> THREAD_POOL_MAP = new HashMap<>(16);
+    private static final HashMap<String, ThreadPoolInfo> THREAD_POOL_INFO_MAP = new HashMap<>(16);
 
     static {
         Field tempField = null;
@@ -36,12 +41,19 @@ public class ThreadUtils {
             e.printStackTrace();
         }
         LINKED_CAPACITY_FIELD = tempField;
-        ThreadPoolExecutor linkedThreadPoll = new ThreadPoolExecutor(2, 5, 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(100), new NamedThreadFactory(LINKED_THREAD_POLL, false));
-        ThreadPoolExecutor syncThreadPoll = new ThreadPoolExecutor(2, 5, 60, TimeUnit.SECONDS,
-                new SynchronousQueue<>(true), new NamedThreadFactory(SYNC_THREAD_POLL, false));
-        THREAD_POOL_MAP.put(LINKED_THREAD_POLL, linkedThreadPoll);
-        THREAD_POOL_MAP.put(SYNC_THREAD_POLL, syncThreadPoll);
+
+        initThreadPool(2, 5, 60, TimeUnit.SECONDS, 10, LINKED_THREAD_POLL);
+        initThreadPool(2, 5, 60, TimeUnit.SECONDS, 0, SYNC_THREAD_POLL);
+    }
+
+    private static void initThreadPool(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, int queueLength, String threadName) {
+        BlockingQueue<Runnable> queue = queueLength <= 0 ? new SynchronousQueue<>(true) : new LinkedBlockingQueue<>(queueLength);
+        ThreadPoolInfo poolInfo = ThreadPoolInfo.builder().threadPoolName(threadName).build()
+                .setQueueType(queueLength <= 0 ? "SynchronousQueue" : "LinkedBlockingQueue")
+                .setQueueSize(0).setQueueLength(0).setQueueUsedPercent("-").setRejectCount(0);
+        THREAD_POOL_MAP.put(threadName, new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, queue
+                , new NamedThreadFactory(threadName, false)));
+        THREAD_POOL_INFO_MAP.put(threadName, poolInfo);
     }
 
     /**
@@ -56,7 +68,17 @@ public class ThreadUtils {
         if (!THREAD_POOL_MAP.containsKey(threadPoolName)) {
             throw new IllegalArgumentException();
         }
-        return THREAD_POOL_MAP.get(threadPoolName).submit(callable);
+        try {
+            return THREAD_POOL_MAP.get(threadPoolName).submit(callable);
+        } catch (Exception e) {
+            if (e instanceof RejectedExecutionException) {
+                THREAD_POOL_INFO_MAP.get(threadPoolName).setRejectCount(THREAD_POOL_INFO_MAP.get(threadPoolName).getRejectCount() + 1);
+                log.error("任务超出线程池队列长度，请注意", e);
+            } else {
+                log.error("任务执行出现异常");
+            }
+        }
+        return null;
     }
 
     /**
@@ -112,110 +134,42 @@ public class ThreadUtils {
         }
     }
 
-    public static ThreadPoolExecutor buildThreadPoolExecutor() {
-        return new ThreadPoolExecutor(2, 5, 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(10), new NamedThreadFactory("xiaoyaozi_", false));
-    }
-
-//    public static void start() {
-//        for (int i = 0; i < 15; i++) {
-//            THREAD_POOL.submit(() -> {
-//                showThreadPoolInfo(THREAD_POOL, "创建任务");
-//                try {
-//                    TimeUnit.SECONDS.sleep(100);
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                }
-//            });
-//        }
-//    }
-//
-//    public static void push() {
-//        try {
-//            THREAD_POOL.submit(() -> {
-//                showThreadPoolInfo(THREAD_POOL, "添加任务");
-//                try {
-//                    TimeUnit.SECONDS.sleep(10);
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                }
-//            });
-//        } catch (Exception exception) {
-//            log.error("任务超出线程池队列长度，请注意", exception);
-//        }
-//    }
-//
-//    public static void modify(Integer queueLength) {
-//        setQueueLength((LinkedBlockingQueue<?>) THREAD_POOL.getQueue(), queueLength);
-//        showThreadPoolInfo(THREAD_POOL, "动态修改后的线程池信息");
-//    }
-
-    public static void dynamicModifyThreadPool() {
-        ThreadPoolExecutor threadPool = buildThreadPoolExecutor();
-        for (int i = 0; i < 20; i++) {
-            threadPool.submit(() -> {
-                showThreadPoolInfo(threadPool, "创建任务");
-                try {
-                    TimeUnit.SECONDS.sleep(10);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            });
-        }
-
-        Future<String> submit = threadPool.submit(new Callable<String>() {
-            @Override
-            public String call() throws Exception {
-                return null;
+    /**
+     * tip: 获取所有线程池的信息
+     * author: xiaoyaozi
+     * createTime: 2020-11-24 21:23
+     * @return ThreadPoolInfo> List
+     */
+    public static List<ThreadPoolInfo> getThreadPoolInfo() {
+        for (Map.Entry<String, ThreadPoolExecutor> entry : THREAD_POOL_MAP.entrySet()) {
+            ThreadPoolExecutor threadPool = entry.getValue();
+            ThreadPoolInfo poolInfo = THREAD_POOL_INFO_MAP.get(entry.getKey());
+            poolInfo.setCorePoolSize(threadPool.getCorePoolSize())
+                    .setActiveCount(threadPool.getActiveCount())
+                    .setMaximumPoolSize(threadPool.getMaximumPoolSize())
+                    .setThreadUsedPercent(divide(threadPool.getActiveCount(), threadPool.getMaximumPoolSize()))
+                    .setCompletedTaskCount(threadPool.getCompletedTaskCount());
+            if (threadPool.getQueue() instanceof LinkedBlockingQueue) {
+                // only linked have length
+                poolInfo.setQueueLength(getQueueLength((LinkedBlockingQueue<?>) threadPool.getQueue()))
+                        .setQueueSize(threadPool.getQueue().size())
+                        .setRemainingCapacity(threadPool.getQueue().remainingCapacity())
+                        .setQueueUsedPercent(divide(threadPool.getQueue().size(), getQueueLength((LinkedBlockingQueue<?>) threadPool.getQueue())));
             }
-        });
-
-        showThreadPoolInfo(threadPool, "设置队列长度");
-        setQueueLength((LinkedBlockingQueue<?>) threadPool.getQueue(),100);
-
-        for (int i = 0; i < 20; i++) {
-            threadPool.submit(() -> {
-                showThreadPoolInfo(threadPool, "创建任务");
-                try {
-                    TimeUnit.SECONDS.sleep(10);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            });
         }
-//
-//        threadPool.setCorePoolSize(10);
-//        threadPool.setMaximumPoolSize(10);
-//        threadPool.prestartAllCoreThreads();
-        try {
-            Thread.currentThread().join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        return new ArrayList<>(THREAD_POOL_INFO_MAP.values());
     }
 
-    public static void showThreadPoolInfo(ThreadPoolExecutor threadPool, String msg) {
-        LinkedBlockingQueue<?> queue = (LinkedBlockingQueue<?>) threadPool.getQueue();
-        int queueLength = getQueueLength(queue);
-        System.out.println(Thread.currentThread().getName() + "-" + msg + "-:"
-                + "corePoolSize: " + threadPool.getCorePoolSize()
-                + ", activeCount: " + threadPool.getActiveCount()
-                + ", maximumPoolSize: " + threadPool.getMaximumPoolSize()
-                + ", threadUsedPercent: " + divide(threadPool.getActiveCount(), threadPool.getMaximumPoolSize())
-                + ", completedTaskCount: " + threadPool.getCompletedTaskCount()
-                + ", queueLength: " + queueLength
-                + ", queueSize: " + queue.size()
-                + ", remainingCapacity: " + queue.remainingCapacity()
-                + ", queueUsedPercent: " + divide(queue.size(), queueLength));
-    }
-
-
-
-
+    /**
+     * tip: 保留两位小数
+     * author: xiaoyaozi
+     * createTime: 2020-11-24 22:41
+     * @param num1 num1
+     * @param num2 num2
+     * @return String String
+     */
     public static String divide(int num1, int num2) {
         return String.format("%1.2f%%", Double.parseDouble(String.valueOf(num1)) / Double.parseDouble(String.valueOf(num2)) * 100);
     }
-
-
 
 }
