@@ -4,12 +4,8 @@ import cn.hutool.core.thread.NamedThreadFactory;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -28,9 +24,12 @@ public class ThreadUtils {
      */
     private static final Field LINKED_CAPACITY_FIELD;
     /**
-     * 存放线程池信息
+     * 线程池Map
      */
     private static final HashMap<String, ThreadPoolExecutor> THREAD_POOL_MAP = new HashMap<>(16);
+    /**
+     * 线程池信息Map
+     */
     private static final HashMap<String, ThreadPoolInfo> THREAD_POOL_INFO_MAP = new HashMap<>(16);
 
     static {
@@ -52,9 +51,10 @@ public class ThreadUtils {
         ThreadPoolInfo poolInfo = ThreadPoolInfo.builder().threadPoolName(threadName).build()
                 .setQueueType(queueLength <= 0 ? "SynchronousQueue" : "LinkedBlockingQueue")
                 .setQueueSize(0).setQueueLength(0).setQueueUsedPercent("-").setRejectCount(0);
-        THREAD_POOL_MAP.put(threadName, new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, queue
-                , new NamedThreadFactory(threadName, false)));
+        THREAD_POOL_MAP.put(threadName, new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, queue,
+                new NamedThreadFactory(threadName, false)));
         THREAD_POOL_INFO_MAP.put(threadName, poolInfo);
+        ExecutorTimeUtils.initExecutorTimeList(threadName);
     }
 
     /**
@@ -72,7 +72,9 @@ public class ThreadUtils {
         Future<T> result = null;
         ThreadPoolExecutor threadPool = THREAD_POOL_MAP.get(threadPoolName);
         try {
-            result = threadPool.submit(callable);
+            result = threadPool.submit(new ExecutorTimeCallable<>(threadPoolName, callable));
+            // monitor thread pool
+            monitorThreadPoolInfo(threadPoolName);
         } catch (Exception e) {
             if (e instanceof RejectedExecutionException) {
                 THREAD_POOL_INFO_MAP.get(threadPoolName).setRejectCount(THREAD_POOL_INFO_MAP.get(threadPoolName).getRejectCount() + 1);
@@ -81,8 +83,6 @@ public class ThreadUtils {
                 log.error("任务执行出现异常", e);
             }
         }
-        // monitor thread pool
-        monitorThreadPoolInfo(threadPoolName);
         return result;
     }
 

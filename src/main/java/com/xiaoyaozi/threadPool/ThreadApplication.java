@@ -41,15 +41,24 @@ public class ThreadApplication {
     @GetMapping("/put")
     public List<ThreadPoolInfo> put() {
         ThreadUtils.pushTaskToThreadPoolQueue(ThreadUtils.LINKED_THREAD_POOL, () -> {
-            TimeUnit.SECONDS.sleep(100);
+            TimeUnit.SECONDS.sleep(1);
             return null;
         });
         return ThreadUtils.getThreadPoolInfo();
     }
 
+    @GetMapping("/iput")
+    public List<ExecutorTimeBucket> iput() {
+        ThreadUtils.pushTaskToThreadPoolQueue(ThreadUtils.LINKED_THREAD_POOL, () -> {
+            TimeUnit.MILLISECONDS.sleep(100);
+            return null;
+        });
+        return ExecutorTimeUtils.getExecutorTimeInfo(ThreadUtils.LINKED_THREAD_POOL);
+    }
+
     @GetMapping("/push")
     public List<ThreadPoolInfo> push() {
-        ThreadUtils.pushTaskToThreadPoolQueue(ThreadUtils.SYNC_THREAD_POOL, () -> {
+        ThreadUtils.pushTaskToThreadPoolQueue(ThreadUtils.LINKED_THREAD_POOL, () -> {
             TimeUnit.SECONDS.sleep(100);
             return null;
         });
