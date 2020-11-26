@@ -21,7 +21,7 @@ public class ExecutorTimeUtils {
     public static void initExecutorTimeList(String threadPoolName) {
         // 这里逆序，方便后续添加数量
         int[] array = {Integer.MAX_VALUE, 10000, 5000, 2500, 1000, 500, 250, 100, 50};
-        List<ExecutorTimeBucket> collect = Arrays.stream(array).mapToObj(m -> ExecutorTimeBucket.builder().upperBound((long) m).count((long) 0).build()).collect(Collectors.toList());
+        List<ExecutorTimeBucket> collect = Arrays.stream(array).mapToObj(m -> ExecutorTimeBucket.builder().upperBound(m).count((long) 0).build()).collect(Collectors.toList());
         EXECUTOR_TIME_INFO_MAP.put(threadPoolName, collect);
     }
 
@@ -42,6 +42,45 @@ public class ExecutorTimeUtils {
                 break;
             }
         }
+    }
+
+    /**
+     * tip: 查看tpxx下的执行时长
+     * author: xiaoyaozi
+     * createTime: 2020-11-26 23:54
+     * @param tp ls90
+     * @return Integer
+     */
+    public static Integer executorTimeQuantile(String threadPoolName, float tp) {
+        if (tp < 0 || tp > 1) {
+            return Integer.MAX_VALUE;
+        }
+        List<ExecutorTimeBucket> timeBuckets = EXECUTOR_TIME_INFO_MAP.get(threadPoolName);
+        if (timeBuckets.size() < 2) {
+            return Integer.MAX_VALUE;
+        }
+        // totalCount * tp, notice rank in timeBuckets
+        float rank = tp * timeBuckets.get(0).getCount();
+        int index = 0;
+        for (int i = 0; i < timeBuckets.size(); i++) {
+            if (timeBuckets.get(i).getCount() >= rank) {
+                index = i;
+            } else {
+                break;
+            }
+        }
+        if (index == 0) {
+            return timeBuckets.get(1).getUpperBound();
+        }
+        Integer bucketStart = 0;
+        Integer bucketEnd = timeBuckets.get(index).getUpperBound();
+        Long count = timeBuckets.get(index).getCount();
+        if (index < timeBuckets.size() - 1) {
+            bucketStart = timeBuckets.get(index + 1).getUpperBound();
+            count -= timeBuckets.get(index + 1).getCount();
+            rank -= timeBuckets.get(index + 1).getCount();
+        }
+        return bucketStart + (int) ((bucketEnd - bucketStart) * (rank / count));
     }
 
     public static List<ExecutorTimeBucket> getExecutorTimeInfo(String threadPoolName) {

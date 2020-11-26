@@ -49,7 +49,7 @@ public class ThreadApplication {
 
     @GetMapping("/iput")
     public List<ExecutorTimeBucket> iput() {
-        ThreadUtils.pushTaskToThreadPoolQueue(ThreadUtils.LINKED_THREAD_POOL, () -> {
+        ThreadUtils.pushTaskToThreadPoolQueue(ThreadUtils.SYNC_THREAD_POOL, () -> {
             TimeUnit.MILLISECONDS.sleep(100);
             return null;
         });
@@ -74,7 +74,7 @@ public class ThreadApplication {
         try {
             return goodFuture.get() + priceFuture.get() + stockFuture.get();
         } catch (InterruptedException | ExecutionException e) {
-            log.error("线程池获取放回结果失败", e);
+            log.error("线程池获取回结果失败", e);
             return "error";
         }
     }

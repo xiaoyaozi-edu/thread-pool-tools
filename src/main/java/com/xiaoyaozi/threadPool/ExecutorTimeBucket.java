@@ -21,7 +21,7 @@ public class ExecutorTimeBucket {
     /**
      * 桶上限
      */
-    private Long upperBound;
+    private Integer upperBound;
     /**
      * 数量
      */
